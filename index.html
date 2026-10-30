@@ -924,6 +924,7 @@
             <div class="map-caption location-links">
               <a id="googleMapsLink" href="https://www.google.com/maps/search/?api=1&amp;query=46.580823,7.709020" target="_blank" rel="noopener noreferrer">In Google Maps öffnen ↗</a>
               <a href="https://www.kiental-sesselbahn.ch/betriebsinfo" target="_blank" rel="noopener noreferrer">Sesselbahn: Betrieb & Anreise ↗</a>
+              <a href="https://www.kiental-sesselbahn.ch/webcam" target="_blank" rel="noopener noreferrer">Webcam ↗</a>
             </div>
             <div class="loc-details">
               <div><b>Lage:</b> Nordwesthang mit Blick zur Blümlisalpgruppe und ins Kandertal.</div>
@@ -1187,15 +1188,17 @@
       const calendarSource = {
         id: 'ramslouene@gmail.com',
         apiKey: 'AIzaSyDydTw7kEaZXiXesTomI7fNiP4xDwMfxTI',
-        timeZone: 'Europe/Zurich'
+        // Confirmed from the public calendar's X-WR-TIMEZONE metadata.
+        // Availability must follow the source calendar's day boundaries.
+        timeZone: 'UTC'
       };
       const availabilityCache = new Map();
       const availabilityTtl = 5 * 60 * 1000;
       let availability = null, availabilityState = 'idle', availabilityWindow = '';
       let availabilityPending = null, availabilityController = null, availabilityRequest = 0;
-      const swissDateFormatter = new Intl.DateTimeFormat('en-CA', {timeZone: calendarSource.timeZone, year: 'numeric', month: '2-digit', day: '2-digit'});
-      function swissDay(value) {
-        const parts = Object.fromEntries(swissDateFormatter.formatToParts(new Date(value)).map(part => [part.type, part.value]));
+      const calendarDateFormatter = new Intl.DateTimeFormat('en-CA', {timeZone: calendarSource.timeZone, year: 'numeric', month: '2-digit', day: '2-digit'});
+      function calendarDay(value) {
+        const parts = Object.fromEntries(calendarDateFormatter.formatToParts(new Date(value)).map(part => [part.type, part.value]));
         return `${parts.year}-${parts.month}-${parts.day}`;
       }
       function nextDay(value) {
@@ -1207,10 +1210,11 @@
         for (const interval of intervals) {
           const start = Date.parse(interval.start), end = Date.parse(interval.end);
           if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) throw new Error('Invalid availability interval');
-          // Google end times are exclusive. Midnight ends do not occupy the next day.
-          // A timed departure does occupy that local day; a group change that day is forbidden.
-          const finalDay = swissDay(end - 1);
-          for (let value = swissDay(start); value <= finalDay; value = nextDay(value)) days.add(value);
+          // Google end times are exclusive. Use the source calendar timezone, not
+          // the visitor/hut timezone, so UTC all-day ends do not add a phantom day.
+          // Timed departures still occupy their source-calendar day.
+          const finalDay = calendarDay(end - 1);
+          for (let value = calendarDay(start); value <= finalDay; value = nextDay(value)) days.add(value);
         }
         return days;
       }
@@ -1221,7 +1225,7 @@
           if (value && value < start) start = value;
           if (value && value > end) end = value;
         }
-        // UTC padding contains the full first/last day in Europe/Zurich, including DST.
+        // Padding safely contains the full first/last day of the source calendar.
         const before = new Date(start + 'T00:00:00Z'); before.setUTCDate(before.getUTCDate() - 1);
         const after = new Date(end + 'T00:00:00Z'); after.setUTCDate(after.getUTCDate() + 2);
         return {start, end, timeMin: before.toISOString(), timeMax: after.toISOString()};
